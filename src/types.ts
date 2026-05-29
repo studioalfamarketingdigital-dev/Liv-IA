@@ -60,4 +60,27 @@ export interface IntegrationState {
   facebookPage: string;
   instagramUser: string;
   sandboxMode: boolean; // Enables simulated state but maintains real API generation
+  savedUserEmail?: string;
+  instagramAppToken?: string;
+  isLoggedIn?: boolean;
 }
+
+export interface ClientProfile {
+  id: string;
+  name: string;
+  instagramUser: string;
+  brandStyle: string;
+  productDescription: string;
+  audience: string;
+  callToAction: string;
+}
+
+export interface WebhookEvent {
+  id: string;
+  time: string;
+  event: string;
+  sender: string;
+  message: string;
+  payload: any;
+}
+

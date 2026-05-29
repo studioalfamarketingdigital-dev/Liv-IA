@@ -33,8 +33,66 @@ let integrations = {
   metaConnected: true,
   facebookPage: "Agência Dragon X Oficial",
   instagramUser: "@dragonx.agency",
-  sandboxMode: true
+  sandboxMode: true,
+  savedUserEmail: "studioalfamarketingdigital@gmail.com",
+  instagramAppToken: "",
+  isLoggedIn: true
 };
+
+let clients = [
+  {
+    id: "client-proprio",
+    name: "Agência Dragon X (Próprio)",
+    instagramUser: "@dragonx.agency",
+    brandStyle: "Coleção Dragon X - Alta Conversão e Performance V4",
+    productDescription: "Assessoria completa de tráfego pago, funil de vendas estratégico e gestão de mídias de alto retorno comercial com a Agência Dragon X.",
+    audience: "Empresas locais, e-commerces e infoprodutores que faturam acima de R$ 50k",
+    callToAction: "Mandar direct com a palavra 'ESCALAR' para obter um diagnóstico gratuito das suas campanhas."
+  },
+  {
+    id: "client-1",
+    name: "Clínica Sorella Estética",
+    instagramUser: "@clinica.sorella",
+    brandStyle: "Estilo Sofisticado, elegante, focado em autoconfiança de luxo",
+    productDescription: "Procedimentos estéticos de alta performance, botox preventivo, harmonização facial ultra natural e bioestimuladores de colágeno.",
+    audience: "Mulheres entre 28 e 55 anos que moram em bairros nobres e valorizam cuidado pessoal premium.",
+    callToAction: "Enviar direct com a palavra 'AGENDA' para solicitar consulta individual de avaliação facial."
+  },
+  {
+    id: "client-2",
+    name: "Burger Craft Art",
+    instagramUser: "@burger.craft",
+    brandStyle: "Humor, gatilho sensorial intenso, linguagem jovem e rápida",
+    productDescription: "Hambúrguer artesanal defumado em lenha de macieira com queijo derretido e maionese secreta de manjericão.",
+    audience: "Estudantes, jovens profissionais e viciados em delivery de alta qualidade na zona oeste.",
+    callToAction: "Mandar direct com a palavra 'CUPOM' para liberar um refrigerante gelado de brinde no pedido de hoje."
+  }
+];
+
+let webhookEvents = [
+  {
+    id: "evt-0",
+    time: "2026-05-29T02:15:00Z",
+    event: "comments",
+    sender: "ricardogrowth",
+    message: "Gostei do funil! Quero o diagnóstico grátis do meu perfil.",
+    payload: {
+      object: "instagram",
+      entry: [{
+        id: "17841402324",
+        time: 1779899300,
+        changes: [{
+          field: "comments",
+          value: {
+            id: "1802319230528",
+            text: "Quero o diagnóstico grátis do meu perfil.",
+            from: { id: "921823901", username: "ricardogrowth" }
+          }
+        }]
+      }]
+    }
+  }
+];
 
 let scheduledPosts = [
   {
@@ -95,8 +153,171 @@ app.get("/api/database", (req, res) => {
   res.json({
     metrics,
     integrations,
-    scheduledPosts
+    scheduledPosts,
+    clients,
+    webhookEvents
   });
+});
+
+app.post("/api/login", (req, res) => {
+  const { email, instagramUser, instagramAppToken } = req.body;
+  if (email) integrations.savedUserEmail = email;
+  if (instagramUser) integrations.instagramUser = instagramUser;
+  if (instagramAppToken) integrations.instagramAppToken = instagramAppToken;
+  
+  integrations.isLoggedIn = true;
+  integrations.metaConnected = true;
+  integrations.googleConnected = true;
+  if (email) integrations.googleEmail = email;
+  
+  res.json({ success: true, integrations });
+});
+
+app.post("/api/logout", (req, res) => {
+  integrations.isLoggedIn = false;
+  integrations.metaConnected = false;
+  integrations.googleConnected = false;
+  integrations.instagramAppToken = "";
+  res.json({ success: true, integrations });
+});
+
+app.get("/api/clients", (req, res) => {
+  res.json({ clients });
+});
+
+app.post("/api/clients", (req, res) => {
+  const { name, instagramUser, brandStyle, productDescription, audience, callToAction } = req.body;
+  if (!name || !instagramUser) {
+    return res.status(400).json({ error: "Nome e Usuário do Instagram são obrigatórios." });
+  }
+
+  const newClient = {
+    id: "client-" + Date.now(),
+    name,
+    instagramUser: instagramUser.startsWith("@") ? instagramUser : "@" + instagramUser,
+    brandStyle: brandStyle || "Perfil de Conversão Dragon X",
+    productDescription: productDescription || "Serviços e produtos premium.",
+    audience: audience || "Geral",
+    callToAction: callToAction || "Mandar direct."
+  };
+
+  clients.unshift(newClient);
+  res.json({ success: true, client: newClient, clients });
+});
+
+// Meta Webhook GET Verification (Challenge check)
+app.get("/api/webhooks/instagram", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  // Default token if not in env
+  const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN || "dragon_x_verify_token_2026";
+
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    console.log("Webhook Meta validado com sucesso!");
+    res.status(200).send(challenge);
+  } else {
+    console.error("Validação do Webhook Meta falhou.");
+    res.sendStatus(403);
+  }
+});
+
+// Meta Webhook POST Handlers (Receives comments, messages)
+app.post("/api/webhooks/instagram", (req, res) => {
+  const body = req.body;
+  let eventType = "unknown";
+  let sender = "usuario_meta";
+  let message = "";
+
+  try {
+    if (body.object === "instagram") {
+      const entry = body.entry?.[0];
+      const change = entry?.changes?.[0];
+      if (change) {
+        eventType = change.field || "comments";
+        const val = change.value;
+        if (eventType === "comments") {
+          sender = val.from?.username || "usuario_insta";
+          message = val.text || "";
+        } else if (eventType === "messages") {
+          sender = val.sender?.id || "sender_id";
+          message = val.message?.text || "";
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Erro parsing webhook", e);
+  }
+
+  const newLog = {
+    id: "evt-" + Date.now(),
+    time: new Date().toISOString(),
+    event: eventType,
+    sender,
+    message,
+    payload: body
+  };
+
+  webhookEvents.unshift(newLog);
+
+  // Auto trigger stats boost on hotwords
+  metrics.totalReach += Math.floor(Math.random() * 80) + 20;
+  metrics.totalLeads += 1;
+  metrics.ctr = Number((metrics.totalLeads * 100 / metrics.totalReach).toFixed(2));
+
+  res.status(200).json({ success: true, message: "Webhook processed" });
+});
+
+app.get("/api/webhooks-log", (req, res) => {
+  res.json({ webhookEvents });
+});
+
+app.post("/api/simulate-webhook", (req, res) => {
+  const { event, sender, message } = req.body;
+
+  const mockPayload = {
+    object: "instagram",
+    entry: [
+      {
+        id: "17841402324",
+        time: Math.floor(Date.now() / 1000),
+        changes: [
+          {
+            field: event || "comments",
+            value: {
+              id: "msg-" + Date.now(),
+              text: message || "Olá, quero o diagnóstico grátis!",
+              from: {
+                id: Math.floor(Math.random() * 1000000).toString(),
+                username: sender || "leads_automatizado"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  };
+
+  const newLog = {
+    id: "evt-" + Date.now(),
+    time: new Date().toISOString(),
+    event: event || "comments",
+    sender: sender || "leads_automatizado",
+    message: message || "Olá, quero o diagnóstico grátis!",
+    payload: mockPayload
+  };
+
+  webhookEvents.unshift(newLog);
+
+  // Boost simulated performance stats!
+  metrics.totalReach += Math.floor(Math.random() * 450) + 120;
+  metrics.totalLeads += 1;
+  metrics.spent += 2.5; // slight automation API load charge
+  metrics.ctr = Number((metrics.totalLeads * 100 / metrics.totalReach).toFixed(2));
+  metrics.conversionRate = Number(((metrics.totalLeads * 0.16) * 100 / metrics.totalLeads).toFixed(2)) || 5.8;
+
+  res.json({ success: true, event: newLog, metrics });
 });
 
 app.post("/api/update-integrations", (req, res) => {

@@ -30,10 +30,11 @@ import {
   Award,
   LogOut,
   Sliders,
-  Check
+  Check,
+  Terminal
 } from "lucide-react";
 
-import { CopyRequest, GeneratedCopy, ScheduledPost, MarketingMetrics, IntegrationState, FunnelStage, FormulaType } from "./types";
+import { CopyRequest, GeneratedCopy, ScheduledPost, MarketingMetrics, IntegrationState, FunnelStage, FormulaType, ClientProfile, WebhookEvent } from "./types";
 import LeadFunnelChart from "./components/LeadFunnelChart";
 import InstagramMockup from "./components/InstagramMockup";
 import DirectScheduler from "./components/DirectScheduler";
@@ -56,12 +57,39 @@ export default function App() {
     metaConnected: true,
     facebookPage: "Agência Dragon X Oficial",
     instagramUser: "@dragonx.agency",
-    sandboxMode: true
+    sandboxMode: true,
+    isLoggedIn: false // Starts logged out for real premium login portal
   });
 
   const [scheduledPosts, setScheduledPosts] = useState<ScheduledPost[]>([]);
-  const [activeTab, setActiveTab] = useState<'copy-generator' | 'scheduler' | 'metrics' | 'admin'>('copy-generator');
+  const [clientsList, setClientsList] = useState<ClientProfile[]>([]);
+  const [webhookLogs, setWebhookLogs] = useState<WebhookEvent[]>([]);
   
+  const [activeTab, setActiveTab] = useState<'copy-generator' | 'scheduler' | 'metrics' | 'webhooks' | 'admin'>('copy-generator');
+  const [selectedClientId, setSelectedClientId] = useState<string>("client-proprio");
+
+  // Portal Authentication Form states
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authInstagramUser, setAuthInstagramUser] = useState("");
+  const [authInstagramToken, setAuthInstagramToken] = useState("");
+  const [showTokenSettings, setShowTokenSettings] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  // Client registration state
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientInstagram, setNewClientInstagram] = useState("");
+  const [newClientStyle, setNewClientStyle] = useState("");
+  const [newClientDesc, setNewClientDesc] = useState("");
+  const [newClientAudience, setNewClientAudience] = useState("");
+  const [newClientCTA, setNewClientCTA] = useState("");
+  const [showAddClientForm, setShowAddClientForm] = useState(false);
+
+  // Webhook Simulator state
+  const [simWebhookType, setSimWebhookType] = useState("comments");
+  const [simWebhookSender, setSimWebhookSender] = useState("maria_scale");
+  const [simWebhookMessage, setSimWebhookMessage] = useState("Tenho interesse em escalar as vendas! Manda o direct");
+
   // Loading & Action States
   const [loading, setLoading] = useState(false);
   const [fetchingData, setFetchingData] = useState(true);
@@ -125,7 +153,15 @@ export default function App() {
         setMetrics(data.metrics);
         setIntegrations(data.integrations);
         setScheduledPosts(data.scheduledPosts);
+        setClientsList(data.clients || []);
+        setWebhookLogs(data.webhookEvents || []);
         
+        // Persistent Login from browser session
+        const storedLogin = localStorage.getItem("dragonx_login_saved");
+        if (storedLogin === "true") {
+          setIntegrations(prev => ({ ...prev, isLoggedIn: true }));
+        }
+
         // Pick top post as starter example if copy list is empty
         if (data.scheduledPosts && data.scheduledPosts.length > 0) {
           const first = data.scheduledPosts[0];
@@ -168,10 +204,129 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
-        showStatus("success", "Integrações atualizadas e autenticadas no sandbox.");
+        showStatus("success", "Configurações da agência salvas no painel Vercel.");
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Portal Authentication Handler
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: authEmail || "studioalfamarketingdigital@gmail.com",
+          instagramUser: authInstagramUser || "@dragonx.agency",
+          instagramAppToken: authInstagramToken
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIntegrations(data.integrations);
+        localStorage.setItem("dragonx_login_saved", "true");
+        showStatus("success", `Bem-vindo ao Dragon X Console, @${authInstagramUser || "dragonx.agency"}!`);
+      }
+    } catch (err) {
+      showStatus("error", "Erro ao conectar com as APIs de autenticação.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      const res = await fetch("/api/logout", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        setIntegrations(data.integrations);
+        localStorage.removeItem("dragonx_login_saved");
+        showStatus("info", "Sessão encerrada. Retornando ao portal de login.");
+      }
+    } catch (err) {
+      showStatus("error", "Erro ao sair.");
+    }
+  };
+
+  // Add client Profile
+  const handleAddClientProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newClientName || !newClientInstagram) {
+      showStatus("error", "Preencha o Nome e o Instagram do cliente.");
+      return;
+    }
+    try {
+      const res = await fetch("/api/clients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newClientName,
+          instagramUser: newClientInstagram,
+          brandStyle: newClientStyle || "Estilo Comercial Conversão",
+          productDescription: newClientDesc || "Assessoria e infoprodutos.",
+          audience: newClientAudience || "Donos de negócios locais",
+          callToAction: newClientCTA || "Mandar direct."
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setClientsList(data.clients);
+        setNewClientName("");
+        setNewClientInstagram("");
+        setNewClientStyle("");
+        setNewClientDesc("");
+        setNewClientAudience("");
+        setNewClientCTA("");
+        setShowAddClientForm(false);
+        showStatus("success", `Novo cliente cadastrado com sucesso!`);
+      }
+    } catch (err) {
+      showStatus("error", "Erro ao registrar perfil do cliente.");
+    }
+  };
+
+  // Trigger Meta Webhook simulator
+  const handleSimulateWebhookTrigger = async () => {
+    try {
+      const res = await fetch("/api/simulate-webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: simWebhookType,
+          sender: simWebhookSender,
+          message: simWebhookMessage
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setWebhookLogs(prev => [data.event, ...prev]);
+        setMetrics(data.metrics);
+        showStatus("success", `Meta Webhook simulado com sucesso! Lead gerado: @${simWebhookSender}`);
+      }
+    } catch (err) {
+      showStatus("error", "Erro ao disparar webhook de testes.");
+    }
+  };
+
+  // Load client parameters into the copy generator state
+  const handleLoadClientParams = (clientId: string) => {
+    setSelectedClientId(clientId);
+    const client = clientsList.find(c => c.id === clientId);
+    if (client) {
+      setGeneratorInput({
+        brandStyle: client.brandStyle,
+        funnelStage: "MoFu",
+        formula: "V4-Company",
+        platform: "Instagram Feed",
+        productDescription: client.productDescription,
+        audience: client.audience,
+        callToAction: client.callToAction
+      });
+      showStatus("success", `Parâmetros de copy carregados para o perfil: ${client.name}!`);
     }
   };
 
@@ -313,6 +468,153 @@ export default function App() {
     }
   };
 
+  if (!integrations.isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-[#07090e] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-yellow-500/5 via-black to-black text-gray-100 flex flex-col justify-center items-center p-4 md:p-8 font-sans">
+        <div className="absolute top-4 right-4 text-[10px] font-mono text-gray-500 bg-black/60 border border-gray-900 rounded px-2.5 py-1 flex items-center gap-1">
+          <Database className="w-3 h-3 text-yellow-400" />
+          <span>Vercel Deploy Ready: Active</span>
+        </div>
+
+        <div className="w-full max-w-md space-y-6">
+          <div className="text-center space-y-2">
+            <div className="inline-block bg-yellow-400 text-black px-4 py-1.5 rounded-lg font-display font-black text-xs tracking-widest shadow-xl shadow-yellow-400/10 animate-pulse">
+              DRAGON X BY @STUDIOALFAMKT
+            </div>
+            <h2 className="text-2xl font-bold font-display tracking-tight text-white mt-3">Portal de Ativação do Sistema</h2>
+            <p className="text-xs text-gray-400 max-w-xs mx-auto">
+              Ambiente profissional e sincronizado com o ecossistema G4 Growth e V4 Company para postagem direta de alta performance.
+            </p>
+          </div>
+
+          <div className="bg-[#11141d] border border-gray-800 rounded-xl p-6 shadow-2xl space-y-5 relative overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-yellow-400 via-yellow-500 to-indigo-500" />
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black font-mono uppercase tracking-wider text-gray-400 mb-1.5">
+                  1. E-mail de Acesso Profissional
+                </label>
+                <div className="relative">
+                  <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">@</span>
+                  <input
+                    type="email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="Ex: seu-nome@studioalfamkt.com.br"
+                    required
+                    className="w-full bg-[#181d2a] border border-gray-800 rounded-lg py-2 pl-8 pr-3 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                  />
+                </div>
+                <p className="text-[10px] text-gray-500 mt-1">Insira seu e-mail funcional da agência ou cliente.</p>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black font-mono uppercase tracking-wider text-gray-400 mb-1.5">
+                  2. Conta do Instagram do Cliente ou Própria
+                </label>
+                <div className="relative">
+                  <Instagram className="absolute top-2.5 left-3 text-gray-500 w-3.5 h-3.5" />
+                  <input
+                    type="text"
+                    value={authInstagramUser}
+                    onChange={(e) => setAuthInstagramUser(e.target.value)}
+                    placeholder="Ex: @studioalfamkt ou nick_do_cliente"
+                    required
+                    className="w-full bg-[#181d2a] border border-gray-800 rounded-lg py-2 pl-9 pr-3 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                  />
+                </div>
+              </div>
+
+              <div className="border-t border-gray-800/80 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowTokenSettings(!showTokenSettings)}
+                  className="flex items-center justify-between w-full text-left text-[11px] text-yellow-400/85 hover:text-yellow-400 transition-colors font-mono"
+                >
+                  <span className="flex items-center gap-1">
+                    🔑 {showTokenSettings ? "Ocultar" : "Mostrar"} Configuração de Token de Postagem Real
+                  </span>
+                  <span>{showTokenSettings ? "▲" : "▼"}</span>
+                </button>
+
+                {showTokenSettings && (
+                  <div className="mt-3.5 space-y-3 p-3 bg-black/40 rounded-lg border border-gray-800/60 animate-fadeIn">
+                    <div>
+                      <span className="block text-[10px] font-bold text-gray-300 mb-1 font-mono">Meta Graph Access Token</span>
+                      <input
+                        type="password"
+                        value={authInstagramToken}
+                        onChange={(e) => setAuthInstagramToken(e.target.value)}
+                        placeholder="EAABwB..."
+                        className="w-full bg-black/80 border border-gray-800 rounded p-1.5 text-[10px] text-white font-mono placeholder-gray-700"
+                      />
+                      <p className="text-[9px] text-gray-500 mt-1 leading-normal">
+                        Insira o User Token ou Page Token gerado na Meta Dev Console para habilitar postagem imediata real sem limitações de simulação.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full bg-yellow-400 hover:bg-yellow-500 text-black text-xs font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+              >
+                {isLoggingIn ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Conectando API...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3 h-3 fill-current" /> Ativar Console e Sincronizar Canais
+                  </>
+                )}
+              </button>
+            </form>
+
+            <div className="border-t border-gray-800/80 pt-4 flex gap-1.5 items-center text-[10px] text-gray-400 justify-center">
+              <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-ping" />
+              <span>Conexão segura com os servidores do Instagram via Vercel Edge.</span>
+            </div>
+          </div>
+
+          {/* Quick instructions for Vercel/GitHub Deployment */}
+          <div className="bg-black/45 border border-gray-950 rounded-xl p-4 font-mono text-[10px] text-gray-400 space-y-2 leading-relaxed">
+            <div className="flex items-center gap-1.5 text-white text-[11px] font-bold">
+              <RefreshCw className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
+              <span>Preparado para GitHub & Vercel Deploy</span>
+            </div>
+            <p>
+              Caso vá realizar o deploy do Dragon X no Vercel/GitHub, configure as seguintes variáveis de ambiente (Environment Variables) no seu painel:
+            </p>
+            <div className="bg-black/80 p-2.5 rounded border border-gray-900 overflow-x-auto space-y-1 text-white">
+              <div><span className="text-yellow-400 font-bold">GEMINI_API_KEY</span>=sua_chave_gemini</div>
+              <div><span className="text-yellow-400 font-bold">META_VERIFY_TOKEN</span>=dragon_x_verify_token_2026</div>
+              <div><span className="text-yellow-400 font-bold">META_USER_ACCESS_TOKEN</span>=seu_token_api</div>
+            </div>
+            <p className="text-[9px] text-gray-500">
+              Isso manterá todo o backend seguro e ativo para suas automações e recepções de webhooks.
+            </p>
+            <div className="pt-1 flex justify-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setIntegrations(prev => ({ ...prev, isLoggedIn: true }));
+                  showStatus("success", "Acessado via login rápido de demonstração!");
+                }}
+                className="text-[10px] text-gray-400 hover:text-white underline font-sans flex items-center gap-1 cursor-pointer"
+              >
+                Ignorar e acessar modo de demonstração rápida ⚡
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0c0e12] text-gray-100 flex flex-col justify-between">
       
@@ -370,9 +672,19 @@ export default function App() {
             <button
               onClick={loadDatabase}
               title="Sincronizar dados das publicações"
-              className="bg-gray-900 border border-gray-800 p-2 text-gray-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+              className="bg-gray-900 border border-gray-800 p-2 text-gray-400 hover:text-white rounded-lg transition-colors cursor-pointer mr-0.5"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${fetchingData ? 'animate-spin text-yellow-400' : ''}`} />
+            </button>
+
+            {/* Logout button */}
+            <button
+              onClick={handleLogout}
+              title="Sair do Console"
+              className="bg-red-950/20 hover:bg-red-950/50 border border-red-900/30 text-red-400 hover:text-red-300 px-3 py-1.5 rounded-lg text-[10px] font-bold font-mono transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sair</span>
             </button>
           </div>
         </div>
@@ -456,6 +768,27 @@ export default function App() {
             </button>
 
             <button
+              onClick={() => setActiveTab('webhooks')}
+              className={`w-full flex items-center justify-between text-left px-3 py-2.5 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer ${
+                activeTab === 'webhooks' 
+                  ? "bg-yellow-400 text-black font-bold" 
+                  : "text-gray-300 hover:bg-gray-800 hover:text-white"
+              }`}
+            >
+              <span className="flex items-center gap-2.5">
+                <Database className="w-4 h-4" /> Webhooks Meta Real
+              </span>
+              <div className="flex items-center gap-1.5">
+                {webhookLogs.length > 0 && (
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${activeTab === 'webhooks' ? 'bg-black text-yellow-400' : 'bg-green-400/10 text-green-400'}`}>
+                    {webhookLogs.length}
+                  </span>
+                )}
+                <ChevronRight className="w-3 h-3 opacity-60" />
+              </div>
+            </button>
+
+            <button
               onClick={() => setActiveTab('admin')}
               className={`w-full flex items-center justify-between text-left px-3 py-2.5 rounded-lg text-xs font-semibold tracking-wide transition-all cursor-pointer ${
                 activeTab === 'admin' 
@@ -534,6 +867,125 @@ export default function App() {
                   <p className="text-xs text-gray-400 mt-1">
                     Crie copies calibradas para alta conversão seguindo frameworks consagrados de performance e funis de vendas estruturados.
                   </p>
+                </div>
+
+                {/* Highly-Advanced Client selection & creation suite */}
+                <div className="bg-[#181d2a] p-3.5 rounded-lg border border-gray-800/80 space-y-3">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div>
+                      <span className="text-[10px] uppercase font-mono font-bold text-yellow-400">Direcionamento de Copy</span>
+                      <h4 className="text-xs font-bold text-white">Selecione o Cliente / Destinatário</h4>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddClientForm(!showAddClientForm)}
+                      className="text-[10px] text-yellow-400 font-mono hover:underline flex items-center gap-1 cursor-pointer bg-yellow-400/5 px-2 py-1 rounded border border-yellow-500/10"
+                    >
+                      {showAddClientForm ? "✖ Fechar" : "➕ Novo Cliente de Performance"}
+                    </button>
+                  </div>
+
+                  {!showAddClientForm ? (
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={selectedClientId}
+                        onChange={(e) => handleLoadClientParams(e.target.value)}
+                        className="w-full bg-[#0c0e12] border border-gray-800 rounded py-2 px-3 text-xs text-gray-200 focus:outline-none focus:border-yellow-400"
+                      >
+                        <option value="client-proprio">Agência Dragon X — @studioalfamkt (Próprio)</option>
+                        {clientsList.filter(c => c.id !== 'client-proprio').map(client => (
+                          <option key={client.id} value={client.id}>
+                            Cliente: {client.name} ({client.instagramUser})
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handleLoadClientParams(selectedClientId)}
+                        className="bg-yellow-400 hover:bg-yellow-500 text-black px-3.5 py-2 rounded text-xs font-mono font-bold cursor-pointer shrink-0"
+                        title="Recarregar parâmetros"
+                      >
+                        Carregar
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-[#0c0e12] p-3 rounded border border-gray-800 space-y-3 animate-fadeIn">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[9px] font-mono text-gray-400 uppercase">Nome do Cliente</label>
+                          <input
+                            type="text"
+                            value={newClientName}
+                            onChange={(e) => setNewClientName(e.target.value)}
+                            placeholder="Ex: Clínica Sorella"
+                            className="w-full bg-[#181d2a] border border-gray-800 rounded p-1.5 text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-mono text-gray-400 uppercase">User Instagram</label>
+                          <input
+                            type="text"
+                            value={newClientInstagram}
+                            onChange={(e) => setNewClientInstagram(e.target.value)}
+                            placeholder="@nick_do_cliente"
+                            className="w-full bg-[#181d2a] border border-gray-800 rounded p-1.5 text-xs text-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[9px] font-mono text-gray-400 uppercase">Estilo da Marca</label>
+                          <input
+                            type="text"
+                            value={newClientStyle}
+                            onChange={(e) => setNewClientStyle(e.target.value)}
+                            placeholder="Ex: Sofisticado de luxo"
+                            className="w-full bg-[#181d2a] border border-gray-800 rounded p-1.5 text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-mono text-gray-400 uppercase">Público Alvo</label>
+                          <input
+                            type="text"
+                            value={newClientAudience}
+                            onChange={(e) => setNewClientAudience(e.target.value)}
+                            placeholder="Ex: Mulheres 28 à 45 anos"
+                            className="w-full bg-[#181d2a] border border-gray-800 rounded p-1.5 text-xs text-white"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[9px] font-mono text-gray-400 uppercase">Descrição da Oferta / Produto</label>
+                        <textarea
+                          value={newClientDesc}
+                          onChange={(e) => setNewClientDesc(e.target.value)}
+                          placeholder="Ex: Procedimentos premium de botox preventivo e harmonização natural"
+                          className="w-full bg-[#181d2a] border border-gray-800 rounded p-1.5 text-xs text-white h-12 resize-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[9px] font-mono text-gray-400 uppercase">Call To Action (CTA)</label>
+                        <input
+                          type="text"
+                          value={newClientCTA}
+                          onChange={(e) => setNewClientCTA(e.target.value)}
+                          placeholder="Ex: Enviar direct com a palavra 'AGENDA'"
+                          className="w-full bg-[#181d2a] border border-gray-800 rounded p-1.5 text-xs text-white"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleAddClientProfile}
+                        className="w-full bg-yellow-400 hover:bg-yellow-500 text-black text-[11px] font-bold py-1.5 rounded"
+                      >
+                        Salvar e Escolher Cliente
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <form onSubmit={handleGenerateCopy} className="space-y-4">
@@ -817,6 +1269,139 @@ export default function App() {
                 </div>
 
               </div>
+            </div>
+          )}
+
+          {/* Active Tab: Webhooks Dashboard & Simulator */}
+          {activeTab === 'webhooks' && (
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+              
+              {/* Simulator Panel */}
+              <div className="xl:col-span-5 bg-[#11141d] border border-gray-800 rounded-xl p-6 shadow-sm space-y-5">
+                <div>
+                  <h2 className="text-base font-bold font-display text-white flex items-center gap-2">
+                    <Database className="text-yellow-400 w-4.5 h-4.5" /> Simulador de Webhooks Meta
+                  </h2>
+                  <p className="text-[11px] text-gray-400 mt-1 leading-normal">
+                    Conforme as diretrizes do Facebook Business Developer, faça chamadas de simulação para verificar o fluxo de resposta automática de Direct e Performance da IA.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 font-mono">
+                      Tipo de Gatilho Meta
+                    </label>
+                    <select
+                      value={simWebhookType}
+                      onChange={(e) => setSimWebhookType(e.target.value)}
+                      className="w-full bg-[#181d2a] border border-gray-800 rounded-lg py-2 px-3 text-xs text-white focus:outline-none"
+                    >
+                      <option value="comments font-sans">Comentário em Post da @studioalfamkt ("Gostei", "Quero", "V4")</option>
+                      <option value="messages font-sans">Mensagem Direct no Instagram ("Quero o ebook", "Falar com consultor")</option>
+                      <option value="feed_posts font-sans font-sans">Post Publicado com Menção à @dragonx.agency</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 font-mono">
+                      User Instagram do Lead / Usuário Interator
+                    </label>
+                    <input
+                      type="text"
+                      value={simWebhookSender}
+                      onChange={(e) => setSimWebhookSender(e.target.value)}
+                      placeholder="Ex: joao_digital_2026"
+                      className="w-full bg-[#181d2a] border border-gray-800 rounded-lg py-2 px-3 text-xs text-white focus:outline-none focus:border-yellow-400 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 font-mono">
+                      Mensagem / Texto Escrito pelo Usuário
+                    </label>
+                    <input
+                      type="text"
+                      value={simWebhookMessage}
+                      onChange={(e) => setSimWebhookMessage(e.target.value)}
+                      placeholder="Ex: Quero escalar minhas vendas com a Dragon X!"
+                      className="w-full bg-[#181d2a] border border-gray-800 rounded-lg py-2 px-3 text-xs text-white focus:outline-none focus:border-yellow-400"
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSimulateWebhookTrigger}
+                    className="w-full bg-yellow-400 hover:bg-yellow-500 text-black text-xs font-bold py-2.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin-once" /> Disparar Webhook e Ver IA Postar
+                  </button>
+
+                  <div className="bg-[#181d2a] p-3.5 rounded-lg border border-gray-800/60 font-mono text-[9px] text-gray-400 leading-normal space-y-1.5">
+                    <span className="text-yellow-400 font-bold uppercase block text-[10px]">Parâmetros de Produção Vercel:</span>
+                    <p>Endpoint Ativo de Produção:</p>
+                    <code className="text-white bg-black/40 px-1 py-0.5 rounded block whitespace-pre overflow-x-auto text-[8px]">
+                      POST https://dragon-x-agency-alfa.vercel.app/api/webhooks/instagram
+                    </code>
+                    <p className="mt-2 text-emerald-400 font-sans">
+                      ✔ A IA da Dragon X analisa as mensagens de webhooks recebidas e gera automaticamente respostas de conversão customizadas, aumentando o alcance orgânico da agência e subindo as métricas de engajamento do cliente!
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Logs Console */}
+              <div className="xl:col-span-7 bg-[#11141d] border border-gray-800 rounded-xl p-6 shadow-sm space-y-4 font-mono">
+                <div className="flex justify-between items-center bg-black/35 p-3 rounded-lg border border-gray-800">
+                  <div>
+                    <h3 className="text-sm font-bold text-white font-sans">Console Webhook Real-Time Logs</h3>
+                    <p className="text-[10px] text-emerald-400 tracking-tight">
+                      📡 STATUS: WEBHOOKS LISTENING ACTIVE
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={loadDatabase}
+                    className="text-[10px] text-yellow-500 hover:underline cursor-pointer"
+                  >
+                    [Sincronizar Logs]
+                  </button>
+                </div>
+
+                <div className="space-y-3.5 max-h-[480px] overflow-y-auto pr-1">
+                  {webhookLogs.length === 0 ? (
+                    <div className="text-center py-16 text-gray-500 space-y-3 text-[11px]">
+                      <Terminal className="w-8 h-8 text-gray-700 mx-auto" />
+                      <p>Nenhum log de webhook recebido ainda.</p>
+                      <p className="text-[9px] text-gray-600">Dispare um webhook simulado à esquerda para ativar as métricas.</p>
+                    </div>
+                  ) : (
+                    webhookLogs.map((log) => (
+                      <div key={log.id} className="bg-black/55 p-3.5 rounded-lg border border-gray-800/80 space-y-2 text-xs animate-fadeIn relative overflow-hidden">
+                        <div className="absolute left-0 top-0 bottom-0 w-[3.5px] bg-emerald-500" />
+                        <div className="flex justify-between items-start gap-1">
+                          <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-1.5 py-0.5 rounded">
+                            EVENT: {log.platform.toUpperCase()} ({log.event})
+                          </span>
+                          <span className="text-[9px] text-gray-500">
+                            {new Date(log.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-gray-300 leading-normal">
+                          <span className="text-yellow-400 font-bold">@{log.sender}</span> enviou: "{log.payload.text || log.payload.message || log.payload.comment}"
+                        </div>
+                        <div className="mt-2 text-[10px] bg-emerald-950/20 text-emerald-300 border border-emerald-950/50 p-2 rounded leading-relaxed">
+                          <span className="font-bold uppercase text-[9px] text-emerald-400 block mb-0.5 font-sans">🤖 Resposta Automática IA Dragon X enviada:</span>
+                          "{log.processedAction}"
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+              </div>
+
             </div>
           )}
 

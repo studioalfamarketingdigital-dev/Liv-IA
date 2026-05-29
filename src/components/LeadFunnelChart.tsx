@@ -89,17 +89,11 @@ export default function LeadFunnelChart({ metrics }: FunnelChartProps) {
                 <div
                   key={stage.id}
                   onClick={() => setSelectedStage(isSelected ? null : stage.id)}
-                  className={`cursor-pointer group relative flex flex-col items-center justify-center p-4 transition-all duration-300 mx-auto rounded-lg text-center ${widths[idx]} ${opacities[idx]} ${
+                  className={`cursor-pointer group relative flex flex-col items-center justify-center p-4 transition-all duration-300 mx-auto rounded-lg text-center ${widths[idx]} bg-gradient-to-r ${stage.color} ${
                     isSelected 
-                      ? "ring-2 ring-yellow-400 scale-[1.02] shadow-[0_0_15px_rgba(234,179,8,0.25)] border-yellow-400" 
+                      ? "ring-2 ring-yellow-400 scale-[1.02] shadow-[0_0_15px_rgba(234,179,8,0.25)]" 
                       : "hover:scale-[1.01]"
                   } border border-transparent`}
-                  style={{
-                    background: `linear-gradient(135deg, var(--tw-gradient-stops))`,
-                  }}
-                  className={`group relative flex flex-col items-center justify-center p-3.5 transition-all duration-300 mx-auto rounded-lg text-center ${widths[idx]} bg-gradient-to-r ${stage.color} ${
-                    isSelected ? "ring-2 ring-white scale-[1.02] shadow-xl" : "hover:translate-y-[-1px]"
-                  }`}
                 >
                   <div className="flex items-center justify-center gap-2 text-white">
                     <stage.icon className="w-4 h-4 text-white" />
