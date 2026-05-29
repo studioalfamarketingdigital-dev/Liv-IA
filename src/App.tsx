@@ -89,6 +89,8 @@ export default function App() {
   const [simWebhookType, setSimWebhookType] = useState("comments");
   const [simWebhookSender, setSimWebhookSender] = useState("maria_scale");
   const [simWebhookMessage, setSimWebhookMessage] = useState("Tenho interesse em escalar as vendas! Manda o direct");
+  const [simAutoResponse, setSimAutoResponse] = useState("Olá @maria_scale! 🚀 Adoramos seu interesse no método Dragon X de crescimento de performance. Acabamos de enviar uma mensagem privada no seu Direct com o link para o diagnóstico gratuito do seu perfil. Vamos decolar juntos!");
+  const [generatingResponse, setGeneratingResponse] = useState(false);
 
   // Loading & Action States
   const [loading, setLoading] = useState(false);
@@ -298,17 +300,50 @@ export default function App() {
         body: JSON.stringify({
           event: simWebhookType,
           sender: simWebhookSender,
-          message: simWebhookMessage
+          message: simWebhookMessage,
+          processedAction: simAutoResponse,
+          platform: simWebhookType.includes("comments") ? "Instagram Comment" : "Instagram Direct"
         })
       });
       const data = await res.json();
       if (data.success) {
         setWebhookLogs(prev => [data.event, ...prev]);
         setMetrics(data.metrics);
-        showStatus("success", `Meta Webhook simulado com sucesso! Lead gerado: @${simWebhookSender}`);
+        showStatus("success", `Meta Webhook simulado com sucesso! Resposta registrada para @${simWebhookSender}`);
       }
     } catch (err) {
       showStatus("error", "Erro ao disparar webhook de testes.");
+    }
+  };
+
+  // Generate suggested response via Gemini endpoint (with fallback logic)
+  const handleGenerateSuggestedResponse = async () => {
+    setGeneratingResponse(true);
+    showStatus("info", "Solicitando ao redator inteligente uma sugestão de resposta automática...");
+    try {
+      const res = await fetch("/api/generate-auto-response", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: simWebhookType,
+          sender: simWebhookSender,
+          message: simWebhookMessage,
+          brandStyle: generatorInput.brandStyle,
+          productDescription: generatorInput.productDescription,
+          callToAction: generatorInput.callToAction
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.response) {
+        setSimAutoResponse(data.response);
+        showStatus("success", "Sugestão de resposta automática gerada e pronta para edição! ✨");
+      } else {
+        showStatus("error", "Erro ao recuperar sugestão da IA.");
+      }
+    } catch (err) {
+      showStatus("error", "Erro ao conectar com o redator de automações.");
+    } finally {
+      setGeneratingResponse(false);
     }
   };
 
@@ -1329,6 +1364,42 @@ export default function App() {
                     />
                   </div>
 
+                  {/* Editable Automated Response preview & editor */}
+                  <div className="bg-black/30 p-4 border border-gray-800/80 rounded-xl space-y-3">
+                    <div className="flex justify-between items-center">
+                      <label className="block text-[10px] font-bold text-yellow-400 uppercase tracking-wider font-mono">
+                        🤖 Resposta Automática Editável
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleGenerateSuggestedResponse}
+                        disabled={generatingResponse}
+                        className="text-[10px] text-yellow-400 hover:text-yellow-300 font-mono flex items-center gap-1 px-2.5 py-1 rounded bg-yellow-400/5 hover:bg-yellow-400/10 border border-yellow-500/20 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        {generatingResponse ? (
+                          <>
+                            <RefreshCw className="w-3 h-3 animate-spin text-yellow-400" /> Escrevendo...
+                          </>
+                        ) : (
+                          <>
+                            <span>✨ Sugerir com IA</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    <textarea
+                      value={simAutoResponse}
+                      onChange={(e) => setSimAutoResponse(e.target.value)}
+                      rows={4}
+                      placeholder="Preencha ou gere a resposta que a IA enviará de volta..."
+                      className="w-full bg-[#181d2a] border border-gray-800 rounded-lg p-2.5 text-xs text-gray-100 placeholder-gray-600 focus:outline-none focus:border-yellow-400 leading-relaxed resize-none font-sans"
+                    />
+                    <p className="text-[9px] text-gray-500 font-mono">
+                      Edite livremente o roteiro acima. A resposta editada será salva no console do sistema ao acionar o gatilho de simulação.
+                    </p>
+                  </div>
+
                   <button
                     type="button"
                     onClick={handleSimulateWebhookTrigger}
@@ -1377,26 +1448,47 @@ export default function App() {
                       <p className="text-[9px] text-gray-600">Dispare um webhook simulado à esquerda para ativar as métricas.</p>
                     </div>
                   ) : (
-                    webhookLogs.map((log) => (
-                      <div key={log.id} className="bg-black/55 p-3.5 rounded-lg border border-gray-800/80 space-y-2 text-xs animate-fadeIn relative overflow-hidden">
-                        <div className="absolute left-0 top-0 bottom-0 w-[3.5px] bg-emerald-500" />
-                        <div className="flex justify-between items-start gap-1">
-                          <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-1.5 py-0.5 rounded">
-                            EVENT: {log.platform.toUpperCase()} ({log.event})
-                          </span>
-                          <span className="text-[9px] text-gray-500">
-                            {new Date(log.timestamp).toLocaleTimeString()}
-                          </span>
+                    webhookLogs.map((log) => {
+                      const platform = log.platform || "Instagram";
+                      const timeString = log.timestamp || log.time || new Date().toISOString();
+                      const displayTime = (() => {
+                        try {
+                          return new Date(timeString).toLocaleTimeString();
+                        } catch {
+                          return new Date().toLocaleTimeString();
+                        }
+                      })();
+                      
+                      const userMessage = log.payload?.changes?.[0]?.value?.text || 
+                                          log.payload?.text || 
+                                          log.payload?.message || 
+                                          log.payload?.comment || 
+                                          log.message || 
+                                          "Interação recebida";
+
+                      const processedAnswer = log.processedAction || "Análise de funil encaminhada de forma automatizada!";
+                      
+                      return (
+                        <div key={log.id} className="bg-black/55 p-3.5 rounded-lg border border-gray-800/80 space-y-2 text-xs animate-fadeIn relative overflow-hidden">
+                          <div className="absolute left-0 top-0 bottom-0 w-[3.5px] bg-emerald-500" />
+                          <div className="flex justify-between items-start gap-1">
+                            <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-1.5 py-0.5 rounded uppercase">
+                              EVENT: {platform} ({log.event})
+                            </span>
+                            <span className="text-[9px] text-gray-500 font-mono">
+                              {displayTime}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-gray-300 leading-normal font-sans">
+                            <span className="text-yellow-400 font-bold">@{log.sender}</span> enviou: "{userMessage}"
+                          </div>
+                          <div className="mt-2 text-[10px] bg-emerald-950/20 text-emerald-300 border border-emerald-950/50 p-2 rounded leading-relaxed font-sans">
+                            <span className="font-bold uppercase text-[9px] text-emerald-400 block mb-0.5">🤖 Resposta Automática IA Dragon X enviada:</span>
+                            "{processedAnswer}"
+                          </div>
                         </div>
-                        <div className="text-[11px] text-gray-300 leading-normal">
-                          <span className="text-yellow-400 font-bold">@{log.sender}</span> enviou: "{log.payload.text || log.payload.message || log.payload.comment}"
-                        </div>
-                        <div className="mt-2 text-[10px] bg-emerald-950/20 text-emerald-300 border border-emerald-950/50 p-2 rounded leading-relaxed">
-                          <span className="font-bold uppercase text-[9px] text-emerald-400 block mb-0.5 font-sans">🤖 Resposta Automática IA Dragon X enviada:</span>
-                          "{log.processedAction}"
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
 

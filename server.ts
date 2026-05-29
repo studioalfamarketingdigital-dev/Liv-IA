@@ -253,9 +253,12 @@ app.post("/api/webhooks/instagram", (req, res) => {
   const newLog = {
     id: "evt-" + Date.now(),
     time: new Date().toISOString(),
+    timestamp: new Date().toISOString(),
     event: eventType,
     sender,
     message,
+    platform: "Instagram",
+    processedAction: `Comentário ou Mensagem analisada e respondida com IA do perfil @${sender}!`,
     payload: body
   };
 
@@ -274,7 +277,7 @@ app.get("/api/webhooks-log", (req, res) => {
 });
 
 app.post("/api/simulate-webhook", (req, res) => {
-  const { event, sender, message } = req.body;
+  const { event, sender, message, processedAction, platform } = req.body;
 
   const mockPayload = {
     object: "instagram",
@@ -302,9 +305,12 @@ app.post("/api/simulate-webhook", (req, res) => {
   const newLog = {
     id: "evt-" + Date.now(),
     time: new Date().toISOString(),
+    timestamp: new Date().toISOString(),
     event: event || "comments",
     sender: sender || "leads_automatizado",
     message: message || "Olá, quero o diagnóstico grátis!",
+    platform: platform || "Instagram",
+    processedAction: processedAction || "Resposta de alta conversão gerada com sucesso!",
     payload: mockPayload
   };
 
@@ -318,6 +324,58 @@ app.post("/api/simulate-webhook", (req, res) => {
   metrics.conversionRate = Number(((metrics.totalLeads * 0.16) * 100 / metrics.totalLeads).toFixed(2)) || 5.8;
 
   res.json({ success: true, event: newLog, metrics });
+});
+
+app.post("/api/generate-auto-response", async (req, res) => {
+  const { event, sender, message, brandStyle, productDescription, callToAction } = req.body;
+  const keyExists = !!process.env.GEMINI_API_KEY;
+  const username = sender || "usuario";
+
+  if (!keyExists) {
+    // Elegant system fallbacks in Portuguese
+    let responseText = `Olá @${username}! 🚀 Acabamos de te enviar os detalhes sobre o nosso funil de tração no seu Direct. Vamos acelerar juntos!`;
+    const msgLower = (message || "").toLowerCase();
+
+    if (msgLower.includes("escala") || msgLower.includes("venda") || msgLower.includes("crescer")) {
+      responseText = `Fala @${username}! 🔥 Com certeza seu negócio tem gargalo de tração. Dá uma olhada no seu direct, enviamos o nosso Guia de Growth de alta conversão!`;
+    } else if (msgLower.includes("estetica") || msgLower.includes("sorella") || msgLower.includes("agenda")) {
+      responseText = `Olá @${username}! ✨ Para agendar sua avaliação individual conosco e conhecer nossos procedimentos premium, cheque seu direct. Enviamos um link de reserva!`;
+    } else if (msgLower.includes("burger") || msgLower.includes("cupom")) {
+      responseText = `Fala @${username}! 🍔 O cupom especial de frete grátis + presente surpresa já está na sua caixa de mensagens. Corre lá antes que finalize!`;
+    }
+
+    // Delay simulation
+    await new Promise(resolve => setTimeout(resolve, 500));
+    return res.json({ success: true, response: responseText });
+  }
+
+  try {
+    const ai = getAi();
+    const prompt = `Você é o chatbot oficial assistente de alto impacto da agência @dragonx.agency (especializada no método V4 Company e no método G4 Growth).
+Gere uma resposta de conversão curta, persuasiva e direta (máximo de 280 caracteres) para o usuário do Instagram @${username}, que disparou um evento do tipo "${event}" enviando a seguinte mensagem: "${message}".
+
+Estilo da marca: ${brandStyle || "Inovador, com muita autoridade de vendas, foco em ROI e engajamento"}
+Descrição do Produto/Serviço: ${productDescription || "Assessoria de marketing, funis de conversão rigorosos e growth acelerado"}
+Chamada para Ação (CTA): ${callToAction || "Checar direct e responder"}
+
+Retorne apenas o texto cru da resposta automática final em português do Brasil, sem aspas adicionais e sem formatação markdown de blocos.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        systemInstruction: "Você é o assistente de automação de Instagram da Agência Dragon X. Responda de forma extremamente curta (máximo 280 caracteres), persuasiva e direta, incluindo emojis adequados.",
+      }
+    });
+
+    const val = response.text?.trim() || "";
+    res.json({ success: true, response: val });
+  } catch (error: any) {
+    res.json({
+      success: true,
+      response: `Olá @${username}! 🚀 Lemos seu chamado de "${message}". Cheque seu Direct para liberarmos a surpresa de conversão preparadíssima!`
+    });
+  }
 });
 
 app.post("/api/update-integrations", (req, res) => {
