@@ -1,0 +1,6 @@
+{
+  "name": "Dragon X",
+  "description": "High-conversion copy and automation system for Agency Dragon X (@studioalfamkt), built on G4 Growth and V4 Company frameworks.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
